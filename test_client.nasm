@@ -7,10 +7,10 @@ _start:
 
  ; set the SIGPIPE signal to ignore
     mov rdi, rsp
-    push SIG_IGN        ; new action -> SIG_IGN 
+    ;push SIG_IGN        ; new action -> SIG_IGN 
     mov rsi, rsp        ; pointer to action struct
-    mov edx, NULL       ; old action -> NULL
-    mov edi, SIGPIPE    ; SIGPIPE    
+    ;mov edx, NULL       ; old action -> NULL
+    ;mov edi, SIGPIPE    ; SIGPIPE    
     mov rax, 0xD        ; rt_sigaction syscall
     mov r10, 0x8        ; size of struc (8 bytes)
     syscall
@@ -18,9 +18,8 @@ _start:
     add rsp, 0x8        ; restore stack
 
     call _network.init
-    call _network.listen
 
-network:
+_network:
     .init:
         ; socket, based on IF_INET to get tcp
         mov rax, 0x29                       ; socket syscall
@@ -43,80 +42,91 @@ network:
         mov rdx, sockaddr_in_l              ; address length 
         syscall
         cmp rax, 0x00
-        jl _bind_failed
-        call _bind_created
+        jl _bind_failed                     ; bind failed 
+        call _bind_created                  ; bind created
         ret
 
-    .listen:
-        ; listen
-        ; int listen(int sockfd, int backlog);
-        mov rax, 0x32                       ; listen syscall
-        mov rdi, qword [socket_fd]          ; sfd
-        mov rsi, 0x03                       ; maximum backlog of 3 connections
-        syscall
+_print:
+    ; prologue
+    push rbp
+    mov rbp, rsp
+    push rdi
+    push rsi
 
-        cmp rax, 0x00
-        jl _listen_failed
-        call _listen_created
-        ret
+    ; [rbp + 0x10] -> buffer pointer
+    ; [rbp + 0x18] -> buffer length
+    
+    mov rax, 0x1
+    mov rdi, 0x1
+    mov rsi, [rbp + 0x10]
+    mov rdx, [rbp + 0x18]
+    syscall
 
-    .accept:
-        ; accept
-        ;        int accept(int sockfd, struct sockaddr *restrict addr,
-        ;              socklen_t *restrict addrlen);
-        mov rax, 0x2B                       ; accept syscall
-        mov rdi, qword [socket_fd]          ; sfd
-        mov rsi, sockaddr_in                ; sockaddr struc pointer
-        mov rdx, peer_address_length        ; populated with peer address length
-        syscall
+    ; epilogue
+    pop rsi
+    pop rdi
+    pop rbp
+    ret 0x10          
 
-        mov qword [read_buffer_fd], rax     ; save new fd of buffer
-        mov qword [client_live], 0x1                ; set client connection flag to 1
-        ret
+_socket_failed:
+    ; print socket failed
+    push socket_f_msg_l
+    push socket_f_msg
+    call _print
+    jmp _exit
 
-    .read:
-        mov rax, 0x00                       ; read syscall
-        mov rdi, qword [read_buffer_fd]     ; read buffer fd
-        mov rsi, msg_buf                    ; buffer pointer where message will be saved
-        mov rdx, 1024                       ; message buffer size
-        syscall
-        
-        mov qword [chars_received], rax     ; save number of received chars to global
-        ret
+_socket_created:
+    ; print socket created
+    push socket_t_msg_l
+    push socket_t_msg
+    call _print
+    ret
 
-    .close:
-        mov rax, 0x3                        ; close syscall
-        mov rdi, qword [read_buffer_fd]     ; read buffer fd
-        syscall
-        
-        cmp rax, 0x0
-        jne _network.close.return
-        call _socket_closed
-        
-        .close.return:
-            ret
+_bind_failed:
+    ; print bind failed
+    push bind_f_msg_l
+    push bind_f_msg
+    call _print
+    jmp _exit
 
-    .shutdown:
-        mov rax, 0x30                       ; close syscall
-        mov rdi, qword [socket_fd]          ; sfd
-        mov rsi, 0x2                        ; shuwdown RW
-        syscall
-        
-        cmp rax, 0x0
-        jne _network.shutdown.return
-        call _buffer_closed
-        .shutdown.return:
-            ret
+_bind_created:
+    ; print bind created
+    push bind_t_msg_l
+    push bind_t_msg
+    call _print
+    ret
+
+_exit:
+    ;call _network.close
+    ;call _network.shutdown
+
+    mov rax, 0x3C       ; sys_exit
+    mov rdi, 0x00       ; return code  
+    syscall
+
+
 
 section .data
+    socket_f_msg:   db "Socket failed to be created.", 0xA, 0x0
+    socket_f_msg_l: equ $ - socket_f_msg
+
+    socket_t_msg:   db "Socket created.", 0xA, 0x0
+    socket_t_msg_l: equ $ - socket_t_msg
+
+    bind_f_msg:   db "Socket failed to bind.", 0xA, 0x0
+    bind_f_msg_l: equ $ - bind_f_msg
+
+    bind_t_msg:   db "Socket bound.", 0xA, 0x0
+    bind_t_msg_l: equ $ - bind_t_msg
+
  sockaddr_in: 
         istruc sockaddr_in_type 
 
             at sockaddr_in_type.sin_family,  dw 0x02            ;AF_INET -> 2 
             at sockaddr_in_type.sin_port,    dw 0x901F          ;(DEFAULT, passed on stack) port in hex and big endian order, 8080 -> 0x901F
-            at sockaddr_in_type.sin_addr,    dd 0xB886EE8C            ;(DEFAULT) 00 -> any address, address 127.0.0.1 -> 0x0100007F
+            at sockaddr_in_type.sin_addr,    dd 0xB886EE8C      ;(DEFAULT) 00 -> any address, address 127.0.0.1 -> 0x0100007F
 
-        iend
+        ;iend
     sockaddr_in_l: equ $ - sockaddr_in
 
 ;*****************************
