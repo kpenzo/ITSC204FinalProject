@@ -1,3 +1,18 @@
+SIGPIPE equ 0xD
+SIG_IGN equ 0x1
+NULL    equ 0x0
+
+;*****************************
+struc sockaddr_in_type
+; defined in man ip(7) because it's dependent on the type of address
+    .sin_family:        resw 1
+    .sin_port:          resw 1
+    .sin_addr:          resd 1
+    .sin_zero:          resd 2          ; padding       
+endstruc
+
+;*****************************
+
 section .text
 global _start
 
@@ -7,10 +22,10 @@ _start:
 
  ; set the SIGPIPE signal to ignore
     mov rdi, rsp
-    ;push SIG_IGN        ; new action -> SIG_IGN 
+    push SIG_IGN        ; new action -> SIG_IGN 
     mov rsi, rsp        ; pointer to action struct
-    ;mov edx, NULL       ; old action -> NULL
-    ;mov edi, SIGPIPE    ; SIGPIPE    
+    mov edx, NULL       ; old action -> NULL
+    mov edi, SIGPIPE    ; SIGPIPE    
     mov rax, 0xD        ; rt_sigaction syscall
     mov r10, 0x8        ; size of struc (8 bytes)
     syscall
@@ -18,6 +33,7 @@ _start:
     add rsp, 0x8        ; restore stack
 
     call _network.init
+    jmp _exit
 
 _network:
     .init:
@@ -35,7 +51,6 @@ _network:
         ; bind, use sockaddr_in struct
         ;       int bind(int sockfd, const struct sockaddr *addr,
         ;            socklen_t addrlen);
-        ; we are stablishing the connection to the socket
         mov rax, 0x31                       ; bind syscall
         mov rdi, qword [socket_fd]          ; sfd
         mov rsi, sockaddr_in                ; sockaddr struct pointer
@@ -45,6 +60,7 @@ _network:
         jl _bind_failed                     ; bind failed 
         call _bind_created                  ; bind created
         ret
+
 
 _print:
     ; prologue
@@ -107,6 +123,7 @@ _exit:
 
 
 section .data
+
     socket_f_msg:   db "Socket failed to be created.", 0xA, 0x0
     socket_f_msg_l: equ $ - socket_f_msg
 
@@ -123,22 +140,13 @@ section .data
         istruc sockaddr_in_type 
 
             at sockaddr_in_type.sin_family,  dw 0x02            ;AF_INET -> 2 
-            at sockaddr_in_type.sin_port,    dw 0x901F          ;(DEFAULT, passed on stack) port in hex and big endian order, 8080 -> 0x901F
+            at sockaddr_in_type.sin_port,    dw 0x27D9          ;(DEFAULT, passed on stack) port in hex and big endian order, 8080 -> 0x901F
             at sockaddr_in_type.sin_addr,    dd 0xB886EE8C      ;(DEFAULT) 00 -> any address, address 127.0.0.1 -> 0x0100007F
 
-        ;iend
+        iend
     sockaddr_in_l: equ $ - sockaddr_in
 
-;*****************************
-struc sockaddr_in_type
-; defined in man ip(7) because it's dependent on the type of address
-    .sin_family:        resw 1
-    .sin_port:          resw 1
-    .sin_addr:          resd 1
-    .sin_zero:          resd 2          ; padding       
-endstruc
 
-;*****************************
 
 
 section .bss
